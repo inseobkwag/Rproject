@@ -1,4 +1,5 @@
-9월 14일
+#9월 14일
+
 #rstudioapi설치
 install.packages("rstudioapi")
 #작업 폴더 설정
@@ -21,8 +22,11 @@ datelist <- seq(from =as.Date('2021-01-01'),
 datelist<- format(datelist, format = '%Y%m')
 #확인
 datelist[1:5]
-9월 7일
-# Rproject
+
+
+
+#9월 7일
+
 ```
 install.packages("wordcloud")
 library(wordcloud)
