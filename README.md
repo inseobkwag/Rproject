@@ -30,7 +30,7 @@ datelist[1:5]
 ```
 
 
-#9월 7일
+2주차 9월 7일
 
 ```
 install.packages("wordcloud")
