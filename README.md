@@ -1,30 +1,29 @@
-#602277101 곽인섭
+# 602277101 곽인섭
 
 9월14일 3주차
 ==================
 1.작업폴더 설정
-*rstudioapi설치
-'install.packages("rstudioapi")'
-*.작업 폴더 설정
-'setwd(dirname(rstudioapi::getSourceEditorContext()$path))'
-*작업 폴더 확인
-'getwd()'
+* rstudioapi설치
+`install.packages("rstudioapi")`
+* 작업 폴더 설정
+`setwd(dirname(rstudioapi::getSourceEditorContext()$path))`
+* 작업 폴더 확인
+`getwd()`
 
 2.수집대상 지역 설정
-*지역 코드
-'loc <-read.csv("./sigun_code.csv", fileEncoding = "UTF-8")'
-*행정구역명 문자 변환
-'loc$code < -as.character(loc$code)'
-*확인
-'head(loc,2)'
+* 지역 코드
+`loc <-read.csv("./sigun_code.csv", fileEncoding = "UTF-8")`
+* 행정구역명 문자 변환
+`loc$code < -as.character(loc$code)`
+* 확인
+`head(loc,2)`
 
-3. 수집기간 설정
+3.수집기간 설정
 ```
 datelist <- seq(from =as.Date('2021-01-01'),
                 to = as.Date('2021-12-31'),
                 by = '1 month')
 datelist<- format(datelist, format = '%Y%m')
-#확인
 datelist[1:5]
 ```
 
