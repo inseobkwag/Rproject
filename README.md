@@ -1,5 +1,66 @@
 # 602277101 곽인섭
 
+9월28일 5주차
+==================
+1.자료 요청하고 응답받기
+* URL목록인 url_list를 xmlTreeParse()로 보내고,응답결과를 raw_data[[i]]에 저장
+* xmlRoot()로 XML의 루트 노드만 추출하여 임시저장소인 root_Node[[i]]에 저장
+* 코드
+```
+for(i in 1:length(url_list)){ 
+  raw_data[[i]] <- xmlTreeParse(url_list[i], useInternalNodes = TRUE,encoding = "utf-8")
+  root_Node[[i]] <- xmlRoot(raw_data[[i]])
+```
+
+2.전체 거래 건수 확인
+* 전체 거래 내역 추출
+`items <- root_Node[[i]][[2]][['items']]`
+* 전체 거래 건수 확인
+`size <- xmlSize(items)`
+
+3.개별 거래 내역 추출
+- 전체 거래 내역(items) 저장 임시 리스트를 생성
+- 세부 거래 내역(items) 저장 임시 테이블을 생성
+- 0.1초를 멈추게하고
+- 거래 연도,월,일,금액,지역코드,법정동,지번,건축 연도,아파트이름,전용면적,층수를 분리된 거래 내역 순서대로 저장 후 통합 저장한다.
+* 코드
+```
+  item <- list()  
+  item_temp_dt <- data.table()
+  Sys.sleep(.1)  
+  for(m in 1:size){  
+    item_temp <- xmlSApply(items[[m]],xmlValue)
+    item_temp_dt <- data.table(year = item_temp[4],     
+                               month = item_temp[7],    
+                               day = item_temp[8],      
+                               price = item_temp[1],    
+                               code = item_temp[12],    
+                               dong_nm = item_temp[5],  
+                               jibun = item_temp[11],   
+                               con_year = item_temp[3], 
+                               apt_nm = item_temp[6],     
+                               area = item_temp[9],     
+                               floor = item_temp[13])   
+    item[[m]] <- item_temp_dt}    
+  apt_bind <- rbindlist(item)
+```
+
+4.응답 내역 저장
+- subset()함수로 지역명 추출
+- str_sub() = 문자열 추출 함수
+- paste0()로 region_cd와 month를 조합한 저장위치에 path를 설정하고 write.csv()로 실거래 데이터를 저장
+* 코드
+```
+region_nm <- subset(loc, code== str_sub(url_list[i],115, 119))$addr_1
+month <- str_sub(url_list[i],130, 135)
+path <- as.character(paste0("./02_raw_data/", region_nm, "_", month,".csv"))
+write.csv(apt_bind, path)   
+msg <- paste0("[", i,"/",length(url_list), "] 수집한 데이터를 [", path,"]에 저장 합니다.")
+cat(msg, "\n\n")
+}
+
+```
+
 9월21일 4주차
 ==================
 1.요청 목록 만들기
