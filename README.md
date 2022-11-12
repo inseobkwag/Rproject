@@ -1,5 +1,248 @@
 # 602277101 곽인섭
 
+11월9일 11주차
+==================
+7.2 요즘 뜨는 지역은 어디?
+
+2-1: 데이터 준비
+```
+setwd(dirname(rstudioapi::getSourceEditorContext()$path)) 
+load("./06_geodataframe/06_apt_price.rdata")     
+grid <- st_read("./01_code/sigun_grid/seoul.shp") 
+apt_price <-st_join(apt_price, grid, join = st_intersects)  
+head(apt_price, 2)
+```
+2-2: 이전/이후 데이터세트 생성
+```
+kde_before <- subset(apt_price, ymd < "2021-07-01")  
+kde_before <- aggregate(kde_before$py, by=list(kde_before$ID),mean)  
+colnames(kde_before) <- c("ID", "before")   
+
+kde_after  <- subset(apt_price, ymd > "2021-07-01")  
+kde_after <- aggregate(kde_after$py, by=list(kde_after$ID),mean)  
+colnames(kde_after) <- c("ID", "after")  
+
+kde_diff <- merge(kde_before, kde_after, by="ID")    
+kde_diff$diff <- round((((kde_diff$after-kde_diff$before)/
+                           kde_diff$before)* 100), 0) 
+head(kde_diff, 2)
+```
+2-3: 가격이 오른지역 찾기
+```
+library(sf)        
+kde_diff <- kde_diff[kde_diff$diff > 0,]    
+kde_hot <- merge(grid, kde_diff,  by="ID")  
+library(ggplot2)   
+library(dplyr)     
+kde_hot %>%        
+  ggplot(aes(fill = diff)) + 
+  geom_sf() + 
+  scale_fill_gradient(low = "white", high = "red")
+```
+2-4: 지도경계선 그리기
+```
+library(sp)   
+kde_hot_sp <- as(st_geometry(kde_hot), "Spatial") 
+x <- coordinates(kde_hot_sp)[,1]  
+y <- coordinates(kde_hot_sp)[,2] 
+
+l1 <- bbox(kde_hot_sp)[1,1] - (bbox(kde_hot_sp)[1,1]*0.0001) 
+l2 <- bbox(kde_hot_sp)[1,2] + (bbox(kde_hot_sp)[1,2]*0.0001)
+l3 <- bbox(kde_hot_sp)[2,1] - (bbox(kde_hot_sp)[2,1]*0.0001)
+l4 <- bbox(kde_hot_sp)[2,2] + (bbox(kde_hot_sp)[1,1]*0.0001)
+
+library(spatstat)  
+win <- owin(xrange=c(l1,l2), yrange=c(l3,l4))  
+plot(win)                                     
+rm(list = c("kde_hot_sp", "apt_price", "l1", "l2", "l3", "l4"))
+```
+2-5: 밀도 그래프 변환
+* 경계창 위에 좌표값 포인트 생성
+* 포인트를 커널밀도 함수로 변환
+```
+p <- ppp(x, y, window=win, marks=kde_hot$diff) 
+d <- density.ppp(p, weights=kde_hot$diff,      
+                 sigma = bw.diggle(p), 
+                 kernel = 'gaussian')
+plot(d)   
+rm(list = c("x", "y", "win","p"))
+```
+2-6: 픽셀을 레스터로 변환
+* 노이즈 제거
+* install.packages("raster")
+```
+d[d < quantile(d)[4] + (quantile(d)[4]*0.1)] <- NA  
+library(raster)         
+raster_hot <- raster(d) 
+plot(raster_hot)
+```
+2-7: 클리핑
+* 서울시 경계선 불러오기
+* 외곽선 클리핑
+* 좌표계 정의
+*  확인
+```
+bnd <- st_read("./01_code/sigun_bnd/seoul.shp") 
+raster_hot <- crop(raster_hot, extent(bnd))            
+crs(raster_hot) <- sp::CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84  
+                        +towgs84=0,0,0")  
+plot(raster_hot)   
+plot(bnd, col=NA, border = "red", add=TRUE)
+```
+2-8: 지도 그리기
+* 베이스맵 불러오기
+* 서울시 경계선 불러오기
+* 레스터 이미지 불러오기
+```
+library(leaflet)   # install.packages("leaflet")
+leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(data = bnd, weight = 3, color= "red", fill = NA) %>% 
+  addRasterImage(raster_hot, 
+   colors = colorNumeric(c("blue", "green", "yellow","red"), 
+   values(raster_hot), na.color = "transparent"), opacity = 0.4)
+```
+2-9: 평균 가격 변화율 정보 저장,메모리 정리
+```
+save(raster_hot, file="./07_map/07_kde_hot.rdata") 
+rm(list = ls())
+```
+7.3 우리동네가 옆 동네보다 비쌀까?
+
+3-1: 데이터 준비
+```
+setwd(dirname(rstudioapi::getSourceEditorContext()$path)) 
+load("./06_geodataframe/06_apt_price.rdata")   
+load("./07_map/07_kde_high.rdata")    
+load("./07_map/07_kde_hot.rdata")     
+
+library(sf)    
+bnd <- st_read("./01_code/sigun_bnd/seoul.shp")   
+grid <- st_read("./01_code/sigun_grid/seoul.shp")
+```
+3-2: 마커 클러스터링 옵션 설정
+* 마커 클러스터링 함수 등록
+* 마커 클러스터링 컬러 설정: 상, 중, 하
+```
+pcnt_10 <- as.numeric(quantile(apt_price$py, probs = seq(.1, .9, by = .1))[1])
+pcnt_90 <- as.numeric(quantile(apt_price$py, probs = seq(.1, .9, by = .1))[9])
+load("./01_code/circle_marker/circle_marker.rdata")
+circle.colors <- sample(x=c("red","green","blue"),size=1000, replace=TRUE)
+```
+3-3: 마커 클러스터링 시각화
+* install.packages("purrr")
+* 오픈스트리트맵 불러오기
+* 서울시 경계선 불러오기
+* 최고가 레스터 이미지 불러오기
+* 급등지 레스터 이미지 불러오기
+* 최고가 / 급등지 선택 옵션 추가하기
+* 마커 클러스터링 불러오기
+* 메모리 정리하기
+```
+library(purrr)  
+leaflet() %>% 
+  addTiles() %>%  
+  addPolygons(data = bnd, weight = 3, color= "red", fill = NA) %>%
+  addRasterImage(raster_high, 
+    colors = colorNumeric(c("blue","green","yellow","red"), values(raster_high), 
+    na.color = "transparent"), opacity = 0.4, group = "2021 최고가") %>% 
+  addRasterImage(raster_hot, 
+    colors = colorNumeric(c("blue", "green", "yellow","red"), values(raster_hot), 
+    na.color = "transparent"), opacity = 0.4, group = "2021 급등지") %>%   
+  addLayersControl(baseGroups = c("2021 최고가", "2021 급등지"), options = layersControlOptions(collapsed = FALSE)) %>%
+  addCircleMarkers(data = apt_price, lng =unlist(map(apt_price$geometry,1)), 
+                   lat = unlist(map(apt_price$geometry,2)), radius = 10, stroke = FALSE, 
+                   fillOpacity = 0.6, fillColor = circle.colors, weight=apt_price$py, 
+                   clusterOptions = markerClusterOptions(iconCreateFunction=JS(avg.formula))) 
+rm(list = ls())
+```
+
+11월2일 10주차
+==================
+7.분석주제를 지도로 시각화
+
+1-1: 지역별 평균 가격구하기
+```
+setwd(dirname(rstudioapi::getSourceEditorContext()$path)) 
+load("./06_geodataframe/06_apt_price.rdata")   
+library(sf)     
+grid <- st_read("./01_code/sigun_grid/seoul.shp")     
+apt_price <-st_join(apt_price, grid, join = st_intersects)  
+head(apt_price)
+
+kde_high <- aggregate(apt_price$py, by=list(apt_price$ID), mean) 
+colnames(kde_high) <- c("ID", "avg_price")   
+head(kde_high, 2)
+```
+1-2: 평균가격 정보표시
+```
+kde_high <- merge(grid, kde_high,  by="ID") 
+library(ggplot2) 
+library(dplyr)   
+kde_high %>% ggplot(aes(fill = avg_price)) + 
+  geom_sf() + 
+  scale_fill_gradient(low = "white", high = "red")
+```
+1-3: 지도 경계 그리기
+```
+library(sp) 
+kde_high_sp <- as(st_geometry(kde_high), "Spatial")    
+x <- coordinates(kde_high_sp)[,1]  
+y <- coordinates(kde_high_sp)[,2] 
+
+l1 <- bbox(kde_high_sp)[1,1] - (bbox(kde_high_sp)[1,1]*0.0001) 
+l2 <- bbox(kde_high_sp)[1,2] + (bbox(kde_high_sp)[1,2]*0.0001)
+l3 <- bbox(kde_high_sp)[2,1] - (bbox(kde_high_sp)[2,1]*0.0001)
+l4 <- bbox(kde_high_sp)[2,2] + (bbox(kde_high_sp)[1,1]*0.0001)
+
+library(spatstat)  
+win <- owin(xrange=c(l1,l2), yrange=c(l3,l4)) # 지도 경계선 생성
+plot(win)         
+rm(list = c("kde_high_sp", "apt_price", "l1", "l2", "l3", "l4"))
+```
+1-4: 밀도 그래프 표시
+```
+p <- ppp(x, y, window=win)  
+d <- density.ppp(p, weights=kde_high$avg_price, 
+                 sigma = bw.diggle(p), 
+                 kernel = 'gaussian')  
+plot(d)   
+rm(list = c("x", "y", "win","p"))
+```
+1-5: 래스터 이미지로 변환
+```
+d[d < quantile(d)[4] + (quantile(d)[4]*0.1)] <- NA  
+library(raster)      
+raster_high <- raster(d) 
+plot(raster_high)
+```
+1-6: 불필요한부분 자르기(클리핑)
+```
+bnd <- st_read("./01_code/sigun_bnd/seoul.shp")    
+raster_high <- crop(raster_high, extent(bnd))      
+crs(raster_high) <- sp::CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 + towgs84=0,0,0") 
+plot(raster_high)  
+plot(bnd, col=NA, border = "red", add=TRUE)
+```
+1-7: 지도 그리기
+```
+library(rgdal)    
+library(leaflet)  
+leaflet() %>% 
+  
+  addProviderTiles(providers$CartoDB.Positron) %>% 
+  addPolygons(data = bnd, weight = 3, color= "red", fill = NA) %>% 
+  addRasterImage(raster_high, 
+   colors = colorNumeric(c("blue", "green","yellow","red"), 
+   values(raster_high), na.color = "transparent"), opacity = 0.4)
+```
+1-8: 저장,메모리 정리
+```
+dir.create("07_map")  
+save(raster_high, file="./07_map/07_kde_high.rdata") 
+rm(list = ls())
+```
+
 10월26일 9주차
 ==================
 지오 데이터프레임 만들기
